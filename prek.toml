@@ -1,0 +1,54 @@
+exclude = { glob = ["target/**", "web/node_modules/**", "web/dist/**"] }
+
+# ── Rust checks ──────────────────────────────────────────────────────────────
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "cargo-fmt"
+name = "cargo fmt"
+language = "system"
+entry = "cargo fmt"
+files = "\\.rs$"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-clippy"
+name = "cargo clippy --fix"
+language = "system"
+entry = "cargo clippy --fix --allow-dirty --allow-staged -- -D warnings"
+files = "\\.rs$"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-check"
+name = "cargo check"
+language = "system"
+entry = "cargo check"
+files = "\\.rs$"
+pass_filenames = false
+
+# ── TypeScript checks ────────────────────────────────────────────────────────
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "tsc"
+name = "tsc --noEmit"
+language = "system"
+entry = "bash -c 'cd web && npx tsc --noEmit'"
+files = "^web/.*\\.(ts|tsx)$"
+pass_filenames = false
+
+# ── General checks (built-in fast hooks) ─────────────────────────────────────
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+]
