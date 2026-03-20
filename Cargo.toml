@@ -20,9 +20,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.8"
 
+# GPIO (Raspberry Pi) – only on real hardware
+rppal = { version = "0.18", features = ["hal"], optional = true }
+
 # Configuration
 dotenvy = "0.15"
 
 # Error handling
 anyhow = "1"
 thiserror = "1"
+
+[features]
+default = []
+gpio = ["rppal"]

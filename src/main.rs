@@ -2,8 +2,11 @@ use anyhow::Result;
 use tokio::signal;
 use tracing::info;
 
+mod gpio;
 mod routes;
 mod state;
+
+use gpio::GpioController;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,6 +19,9 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Starting fuel-logger-rs");
+
+    // GPIO controller
+    let gpio = GpioController::new()?;
 
     // Axum web server
     let shared = state::SharedState::new(state::AppState::new().into());
