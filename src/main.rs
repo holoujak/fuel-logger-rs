@@ -2,10 +2,12 @@ use anyhow::Result;
 use tokio::signal;
 use tracing::info;
 
+mod config;
 mod gpio;
 mod routes;
 mod state;
 
+use config::Config;
 use gpio::GpioController;
 
 #[tokio::main]
@@ -18,7 +20,8 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    info!("Starting fuel-logger-rs");
+    let config = Config::from_env()?;
+    info!("Starting fuel-logger-rs with config: {:?}", config);
 
     // GPIO controller
     let gpio = GpioController::new()?;
@@ -26,8 +29,8 @@ async fn main() -> Result<()> {
     // Axum web server
     let shared = state::SharedState::new(state::AppState::new().into());
     let app = routes::router(shared.clone());
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await?;
-    info!("Web server listening on 0.0.0.0:8000");
+    let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
+    info!("Web server listening on {}", config.listen_addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

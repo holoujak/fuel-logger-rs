@@ -29,6 +29,7 @@ dotenvy = "0.15"
 # Error handling
 anyhow = "1"
 thiserror = "1"
+toml = "1.0.7"
 
 [features]
 default = []

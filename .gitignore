@@ -23,3 +23,6 @@ target
 # WEB (Vite + React)
 web/node_modules/
 web/dist/
+
+# Runtime config (contains secrets)
+config.toml

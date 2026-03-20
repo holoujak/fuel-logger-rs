@@ -1,0 +1,5 @@
+# Fuel Logger Configuration
+# Place this file as config.toml next to the binary.
+# If not present, environment variables + hardcoded defaults are used.
+
+listen_addr = "0.0.0.0:8000"
