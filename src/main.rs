@@ -1,6 +1,7 @@
 use anyhow::Result;
+use std::sync::Arc;
 use tokio::signal;
-use tracing::info;
+use tracing::{info, warn};
 
 mod config;
 mod db;
@@ -8,10 +9,12 @@ mod gpio;
 mod models;
 mod routes;
 mod state;
+mod station;
 mod wiegand;
 
 use config::Config;
 use gpio::GpioController;
+use station::StationManager;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,8 +36,19 @@ async fn main() -> Result<()> {
     // GPIO controller
     let gpio = GpioController::new()?;
 
+    // Station manager (owns all station state + GPIO logic)
+    let manager = Arc::new(StationManager::new(config.clone(), pool.clone(), gpio)?);
+
+    // Start hardware loops (Wiegand readers, button polling, flow meters)
+    let manager_hw = manager.clone();
+    let hw_handle = tokio::spawn(async move {
+        if let Err(e) = manager_hw.run_hardware_loop().await {
+            warn!("Hardware loop error: {e}");
+        }
+    });
+
     // Axum web server
-    let shared = state::AppState::new(pool);
+    let shared = state::AppState::new(pool, manager.clone());
     let app = routes::router(shared);
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
     info!("Web server listening on {}", config.listen_addr);
@@ -44,6 +58,9 @@ async fn main() -> Result<()> {
         .await?;
 
     info!("Shutting down...");
+    manager.shutdown().await;
+    hw_handle.abort();
+    info!("Finished.");
     Ok(())
 }
 

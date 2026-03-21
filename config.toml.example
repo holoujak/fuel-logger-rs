@@ -3,3 +3,32 @@
 # If not present, environment variables + hardcoded defaults are used.
 
 listen_addr = "0.0.0.0:8000"
+database_url = "sqlite:fuelloggerrs.db?mode=rwc"
+
+[[stations]]
+id = 1
+name = "S1"
+keyboard_d0_gpio = 17
+keyboard_d1_gpio = 18
+keyboard_led_gpio = 27
+relay_gpio = 10
+start_gpio = 22
+stop_gpio = 23
+pause_gpio = 24
+buzzer_gpio = 9
+# flow_meter_gpio = 16   # uncomment once additional flow meter is connected
+camera_url = "rtsp://user:password@192.168.1.203:554/Streaming/Channels/101"
+
+[[stations]]
+id = 2
+name = "S2"
+keyboard_d0_gpio = 11
+keyboard_d1_gpio = 8
+keyboard_led_gpio = 7
+relay_gpio = 13
+start_gpio = 5
+stop_gpio = 6
+pause_gpio = 12
+buzzer_gpio = 19
+flow_meter_gpio = 26
+camera_url = "rtsp://user:password@192.168.1.203:554/Streaming/Channels/101"

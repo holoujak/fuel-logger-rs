@@ -15,6 +15,14 @@ export interface CreateUser {
     station2: boolean;
 }
 
+export interface StationInfo {
+    id: number;
+    name: string;
+    status: string;
+    current_length_secs: number | null;
+    pulses_count: number;
+    active_user: string | null;
+}
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -42,3 +50,6 @@ export const updateUser = (id: number, data: Partial<CreateUser>) =>
     apiFetch<User>(`/users/${id}`, { method: "PUT", body: JSON.stringify(data) });
 export const deleteUser = (id: number) =>
     apiFetch<void>(`/users/${id}`, { method: "DELETE" });
+
+// Stations
+export const fetchStations = () => apiFetch<StationInfo[]>("/stations");

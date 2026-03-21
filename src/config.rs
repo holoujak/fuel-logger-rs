@@ -3,14 +3,65 @@ use serde::Deserialize;
 use tracing::info;
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct StationConfig {
+    pub id: u32,
+    pub name: String,
+    pub keyboard_d0_gpio: u8,
+    pub keyboard_d1_gpio: u8,
+    pub keyboard_led_gpio: u8,
+    pub relay_gpio: u8,
+    pub start_gpio: u8,
+    pub stop_gpio: u8,
+    pub pause_gpio: Option<u8>,
+    pub buzzer_gpio: Option<u8>,
+    pub flow_meter_gpio: Option<u8>,
+    pub camera_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub database_url: String,
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
+    pub stations: Vec<StationConfig>,
 }
 
 fn default_listen_addr() -> String {
     "0.0.0.0:8000".to_string()
+}
+
+/// Hardcoded station configs matching the original Python setup.
+fn default_stations() -> Vec<StationConfig> {
+    vec![
+        StationConfig {
+            id: 1,
+            name: "S1".to_string(),
+            keyboard_d0_gpio: 17,
+            keyboard_d1_gpio: 18,
+            keyboard_led_gpio: 27,
+            relay_gpio: 10,
+            start_gpio: 22,
+            stop_gpio: 23,
+            pause_gpio: Some(24),
+            buzzer_gpio: Some(9),
+            flow_meter_gpio: None,
+            camera_url: None,
+        },
+        StationConfig {
+            id: 2,
+            name: "S2".to_string(),
+            keyboard_d0_gpio: 11,
+            keyboard_d1_gpio: 8,
+            keyboard_led_gpio: 7,
+            relay_gpio: 13,
+            start_gpio: 5,
+            stop_gpio: 6,
+            pause_gpio: Some(12),
+            buzzer_gpio: Some(19),
+            flow_meter_gpio: Some(26),
+            camera_url: None,
+        },
+    ]
 }
 
 impl Config {
@@ -29,10 +80,12 @@ impl Config {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "sqlite:fuelloggerrs.db?mode=rwc".to_string());
         let listen_addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| default_listen_addr());
+        let stations = default_stations();
 
         Ok(Config {
             database_url,
             listen_addr,
+            stations,
         })
     }
 }

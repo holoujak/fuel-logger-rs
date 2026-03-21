@@ -23,6 +23,7 @@ pub fn router(shared: AppState) -> Router {
             "/api/users/{id}",
             get(get_user).put(update_user).delete(delete_user),
         )
+        .route("/api/stations", get(get_stations))
         .route("/", get(frontend))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -134,4 +135,10 @@ async fn delete_user(
     } else {
         Ok(StatusCode::NO_CONTENT)
     }
+}
+
+// ─── Station handlers ───────────────────────────────────────────────────────
+
+async fn get_stations(State(state): State<AppState>) -> Json<Vec<StationInfo>> {
+    Json(state.manager.get_stations_info())
 }

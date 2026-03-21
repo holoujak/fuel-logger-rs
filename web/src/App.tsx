@@ -1,5 +1,6 @@
 import { Routes, Route, Link } from "react-router-dom";
 import UsersPage from "./pages/UsersPage";
+import StationsPage from "./pages/StationsPage";
 
 export default function App() {
     return (
@@ -13,7 +14,7 @@ export default function App() {
             </nav>
             <main className="content">
                 <Routes>
-                    <Route path="/" element={<div>TODO</div>} />
+                    <Route path="/" element={<StationsPage />}/>
                     <Route path="/users" element={<UsersPage />} />
                 </Routes>
             </main>
