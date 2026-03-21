@@ -5,8 +5,8 @@ edition = "2021"
 description = "Fuel station logger for Raspberry Pi with Wiegand reader, GPIO control, and web UI"
 
 [dependencies]
-axum = { version = "0.7", features = ["macros"] }
-tower = "0.4"
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
