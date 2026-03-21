@@ -22,6 +22,7 @@
             probe-rs-tools
             prek
             pkgs.pkgsCross.aarch64-multiplatform-musl.stdenv.cc
+            pkgsCross.aarch64-multiplatform-musl.stdenv.cc
             sqlite
           ];
 
@@ -42,7 +43,9 @@
             gum style --align center --border normal \
             --border-foreground 4 --foreground 3 \
             "$(figlet FUEL LOGGER | head -n-1)"
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld
+            export CC_aarch64_unknown_linux_musl=aarch64-unknown-linux-musl-cc
+            export AR_aarch64_unknown_linux_musl=aarch64-unknown-linux-musl-ar
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-unknown-linux-musl-cc
           '';
         };
 
