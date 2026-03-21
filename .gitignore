@@ -26,3 +26,8 @@ web/dist/
 
 # Runtime config (contains secrets)
 config.toml
+
+# SQLite database
+*.db
+*.db-shm
+*.db-wal

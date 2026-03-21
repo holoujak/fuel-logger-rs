@@ -3,6 +3,7 @@ use tokio::signal;
 use tracing::info;
 
 mod config;
+mod db;
 mod gpio;
 mod routes;
 mod state;
@@ -22,6 +23,10 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     info!("Starting fuel-logger-rs with config: {:?}", config);
+
+    // Database pool
+    let pool = db::create_pool(&config.database_url).await?;
+    db::run_migrations(&pool).await?;
 
     // GPIO controller
     let gpio = GpioController::new()?;

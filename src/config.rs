@@ -4,6 +4,7 @@ use tracing::info;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    pub database_url: String,
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
 }
@@ -25,8 +26,13 @@ impl Config {
 
         info!("No config.toml found, using environment variables + defaults");
 
+        let database_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "sqlite:fuelloggerrs.db?mode=rwc".to_string());
         let listen_addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| default_listen_addr());
 
-        Ok(Config { listen_addr })
+        Ok(Config {
+            database_url,
+            listen_addr,
+        })
     }
 }

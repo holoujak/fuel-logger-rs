@@ -22,6 +22,7 @@
             probe-rs-tools
             prek
             pkgs.pkgsCross.aarch64-multiplatform-musl.stdenv.cc
+            sqlite
           ];
 
           shellHook = ''
