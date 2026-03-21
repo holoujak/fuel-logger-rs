@@ -5,6 +5,7 @@ use tracing::info;
 mod config;
 mod db;
 mod gpio;
+mod models;
 mod routes;
 mod state;
 
@@ -32,8 +33,8 @@ async fn main() -> Result<()> {
     let gpio = GpioController::new()?;
 
     // Axum web server
-    let shared = state::SharedState::new(state::AppState::new().into());
-    let app = routes::router(shared.clone());
+    let shared = state::AppState::new(pool);
+    let app = routes::router(shared);
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
     info!("Web server listening on {}", config.listen_addr);
 

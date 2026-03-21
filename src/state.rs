@@ -1,13 +1,12 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use sqlx::SqlitePool;
 
-pub type SharedState = Arc<RwLock<AppState>>;
-
-#[derive(Debug, Default)]
-pub struct AppState {}
+#[derive(Debug, Clone)]
+pub struct AppState {
+    pub pool: SqlitePool,
+}
 
 impl AppState {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
     }
 }
