@@ -151,4 +151,4 @@ mod mock {
 pub use real::{GpioController, InputPin, Level, OutputPin};
 
 #[cfg(not(feature = "gpio"))]
-pub use mock::GpioController;
+pub use mock::{GpioController, InputPin};

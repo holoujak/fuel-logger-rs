@@ -8,6 +8,7 @@ mod gpio;
 mod models;
 mod routes;
 mod state;
+mod wiegand;
 
 use config::Config;
 use gpio::GpioController;
