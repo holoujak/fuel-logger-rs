@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
     routing::get,
@@ -24,6 +24,9 @@ pub fn router(shared: AppState) -> Router {
             get(get_user).put(update_user).delete(delete_user),
         )
         .route("/api/stations", get(get_stations))
+        .route("/api/logs", get(list_logs))
+        .route("/api/logs/{id}", get(get_log))
+        .route("/api/snapshots/{station_id}/{filename}", get(get_snapshot))
         .route("/", get(frontend))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -141,4 +144,102 @@ async fn delete_user(
 
 async fn get_stations(State(state): State<AppState>) -> Json<Vec<StationInfo>> {
     Json(state.manager.get_stations_info())
+}
+
+// ─── Log handlers ───────────────────────────────────────────────────────────
+
+async fn list_logs(
+    State(state): State<AppState>,
+    Query(params): Query<LogQuery>,
+) -> Result<Json<Vec<Log>>, (StatusCode, String)> {
+    let limit = params.limit.unwrap_or(100);
+    let offset = params.offset.unwrap_or(0);
+
+    // Build query dynamically to avoid duplicating 4 near-identical branches
+    let mut sql = String::from(
+        "SELECT id, user_id, created_at, station, length, consumption, snapshot_path FROM logs",
+    );
+    let mut conditions = Vec::new();
+
+    if params.station.is_some() {
+        conditions.push("station = ?");
+    }
+    if params.user_id.is_some() {
+        conditions.push("user_id = ?");
+    }
+    if !conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&conditions.join(" AND "));
+    }
+    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+
+    let mut query = sqlx::query_as::<_, Log>(&sql);
+    if let Some(station) = params.station {
+        query = query.bind(station);
+    }
+    if let Some(user_id) = params.user_id {
+        query = query.bind(user_id);
+    }
+    query = query.bind(limit).bind(offset);
+
+    query
+        .fetch_all(&state.pool)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn get_log(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<Json<Log>, (StatusCode, String)> {
+    sqlx::query_as::<_, Log>(
+        "SELECT id, user_id, created_at, station, length, consumption, snapshot_path FROM logs WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map(Json)
+    .ok_or((StatusCode::NOT_FOUND, "Log not found".to_string()))
+}
+
+// ─── Snapshot handler ───────────────────────────────────────────────────────
+
+async fn get_snapshot(
+    State(state): State<AppState>,
+    Path((station_id, filename)): Path<(String, String)>,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    use axum::body::Body;
+    use axum::response::IntoResponse;
+
+    // Sanitize: only allow simple components (no path traversal)
+    if station_id.contains('.')
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains("..")
+    {
+        return Err((StatusCode::BAD_REQUEST, "Invalid path".to_string()));
+    }
+
+    let path = std::path::Path::new(&state.config.snapshot_dir)
+        .join(&station_id)
+        .join(&filename);
+    let data = tokio::fs::read(&path)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "Snapshot not found".to_string()))?;
+
+    let content_type = if filename.ends_with(".png") {
+        "image/png"
+    } else if filename.ends_with(".jpg") || filename.ends_with(".jpeg") {
+        "image/jpeg"
+    } else {
+        "application/octet-stream"
+    };
+
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, content_type)],
+        Body::from(data),
+    )
+        .into_response())
 }
