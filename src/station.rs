@@ -13,6 +13,7 @@ use tracing::{debug, info, warn};
 use crate::config::{Config, StationConfig};
 use crate::gpio::{GpioController, InputPin, Level, OutputPin};
 use crate::models::StationInfo;
+use crate::snapshot;
 use crate::wiegand::{WiegandEvent, WiegandReader};
 
 // ─── Station status (mirrors the Python enum) ───────────────────────────────
@@ -66,6 +67,8 @@ struct StationRuntime {
     relay_on_since: Option<Instant>,
     /// Per-station buzzer blink tick counter (avoids shared static).
     buzzer_tick: AtomicU32,
+    /// Background snapshot capture handle.
+    snapshot_handle: Option<tokio::task::JoinHandle<Option<String>>>,
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -143,6 +146,7 @@ impl StationManager {
                     waiting_since: None,
                     relay_on_since: None,
                     buzzer_tick: AtomicU32::new(0),
+                    snapshot_handle: None,
                 },
             );
         }
@@ -404,6 +408,17 @@ impl StationManager {
                                 buz.set_low();
                             }
 
+                            // Capture RTSP snapshot in background
+                            if let Some(ref url) = s.cfg.camera_url {
+                                let now = Utc::now().with_timezone(&Prague);
+                                s.snapshot_handle = Some(snapshot::capture_snapshot_background(
+                                    url.clone(),
+                                    self.config.snapshot_dir.clone(),
+                                    sid,
+                                    now,
+                                ));
+                            }
+
                             let now = Utc::now().with_timezone(&Prague);
                             s.relay_start = Some(now);
                             s.last_resume = Some(now);
@@ -497,13 +512,14 @@ impl StationManager {
         }
     }
 
-    fn extract_log_info(s: &StationRuntime) -> LogSaveInfo {
+    fn extract_log_info(s: &mut StationRuntime) -> LogSaveInfo {
         let pulses = *s.pulse_counter.lock().unwrap();
         LogSaveInfo {
             user_id: s.active_user_id.unwrap_or(0),
             station: s.cfg.id as i32,
             created_at: s.relay_start.map(|dt| dt.naive_local()),
             length: s.accumulated_length as i32,
+            snapshot_handle: s.snapshot_handle.take(),
             consumption: pulses as f64 / FLOW_METER_PPL,
             pulses,
         }
@@ -532,23 +548,36 @@ impl StationManager {
             info.station, info.length, info.consumption, info.pulses
         );
 
+        // Await the background snapshot capture if one was started
+        let snapshot_path: Option<String> = match info.snapshot_handle {
+            Some(handle) => match handle.await {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("Snapshot task panicked: {e}");
+                    None
+                }
+            },
+            None => None,
+        };
+
         let created = info
             .created_at
             .unwrap_or_else(|| chrono::Local::now().naive_local());
 
         let result = sqlx::query(
-            "INSERT INTO logs (user_id, created_at, station, length, consumption) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, created_at, station, length, consumption, snapshot_path) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(info.user_id)
         .bind(created)
         .bind(info.station)
         .bind(info.length)
         .bind(info.consumption)
+        .bind(&snapshot_path)
         .execute(pool)
         .await;
 
         match result {
-            Ok(_) => info!("Log saved successfully"),
+            Ok(_) => info!("Log saved successfully (snapshot: {:?})", snapshot_path),
             Err(e) => warn!("Failed to save log: {e}"),
         }
     }
@@ -561,4 +590,5 @@ struct LogSaveInfo {
     length: i32,
     consumption: f64,
     pulses: u64,
+    snapshot_handle: Option<tokio::task::JoinHandle<Option<String>>>,
 }
