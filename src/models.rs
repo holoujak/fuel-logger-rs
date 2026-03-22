@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 // ─── User ────────────────────────────────────────────────────────────────────
@@ -37,4 +38,24 @@ pub struct StationInfo {
     pub current_length_secs: Option<i64>,
     pub pulses_count: u64,
     pub active_user: Option<String>,
+}
+
+// ─── Log ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Log {
+    pub id: i32,
+    pub user_id: i32,
+    pub created_at: NaiveDateTime,
+    pub station: i32,
+    pub length: i32,
+    pub consumption: f64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LogQuery {
+    pub station: Option<i32>,
+    pub user_id: Option<i32>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }

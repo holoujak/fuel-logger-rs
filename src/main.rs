@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     });
 
     // Axum web server
-    let shared = state::AppState::new(pool, manager.clone());
+    let shared = state::AppState::new(pool, manager.clone(), config.clone());
     let app = routes::router(shared);
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
     info!("Web server listening on {}", config.listen_addr);

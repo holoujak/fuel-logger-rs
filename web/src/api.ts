@@ -24,6 +24,23 @@ export interface StationInfo {
     active_user: string | null;
 }
 
+export interface Log {
+    id: number;
+    user_id: number;
+    created_at: string;
+    station: number;
+    length: number;
+    consumption: number;
+    snapshot_path: string | null;
+}
+
+export interface LogQuery {
+    station?: number;
+    user_id?: number;
+    limit?: number;
+    offset?: number;
+}
+
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
 const BASE = "/api";
@@ -53,3 +70,14 @@ export const deleteUser = (id: number) =>
 
 // Stations
 export const fetchStations = () => apiFetch<StationInfo[]>("/stations");
+
+// Logs
+export const fetchLogs = (params?: LogQuery) => {
+    const qs = new URLSearchParams();
+    if (params?.station != null) qs.set("station", String(params.station));
+    if (params?.user_id != null) qs.set("user_id", String(params.user_id));
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    const q = qs.toString();
+    return apiFetch<Log[]>(`/logs${q ? "?" + q : ""}`);
+};
