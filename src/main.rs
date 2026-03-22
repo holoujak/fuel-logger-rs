@@ -8,6 +8,7 @@ mod db;
 mod gpio;
 mod models;
 mod routes;
+mod snapshot;
 mod state;
 mod station;
 mod wiegand;

@@ -40,12 +40,18 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
             station     INTEGER NOT NULL,
             length      INTEGER NOT NULL DEFAULT 0,
             consumption REAL NOT NULL DEFAULT 0.0,
+            snapshot_path TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         "#,
     )
     .execute(pool)
     .await?;
+
+    // Add snapshot_path column to existing tables (idempotent)
+    let _ = sqlx::query("ALTER TABLE logs ADD COLUMN snapshot_path TEXT")
+        .execute(pool)
+        .await;
 
     info!("Database migrations completed");
     Ok(())

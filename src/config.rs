@@ -23,11 +23,17 @@ pub struct Config {
     pub database_url: String,
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
+    #[serde(default = "default_snapshot_dir")]
+    pub snapshot_dir: String,
     pub stations: Vec<StationConfig>,
 }
 
 fn default_listen_addr() -> String {
     "0.0.0.0:8000".to_string()
+}
+
+fn default_snapshot_dir() -> String {
+    "./snapshots".to_string()
 }
 
 /// Hardcoded station configs matching the original Python setup.
@@ -81,11 +87,14 @@ impl Config {
             .unwrap_or_else(|_| "sqlite:fuelloggerrs.db?mode=rwc".to_string());
         let listen_addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| default_listen_addr());
         let stations = default_stations();
+        let snapshot_dir =
+            std::env::var("RTSP_SNAPSHOT_DIR").unwrap_or_else(|_| default_snapshot_dir());
 
         Ok(Config {
             database_url,
             listen_addr,
             stations,
+            snapshot_dir,
         })
     }
 }
