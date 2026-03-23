@@ -220,7 +220,7 @@ async fn list_logs(
         sql.push_str(" WHERE ");
         sql.push_str(&conditions.join(" AND "));
     }
-    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+    sql.push_str(" ORDER BY id DESC LIMIT ? OFFSET ?");
 
     let mut query = sqlx::query_as::<_, Log>(&sql);
     if let Some(station) = params.station {
