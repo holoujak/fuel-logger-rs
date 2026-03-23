@@ -1,19 +1,66 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
+    extract::{Path, Query, Request, State},
+    http::{header, StatusCode},
+    middleware::{self, Next},
+    response::{Html, Json, Response},
     routing::get,
     Router,
 };
+use base64::Engine;
 
 use crate::models::*;
 use crate::state::AppState;
-use axum::response::Html;
 
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 async fn frontend() -> Html<&'static str> {
     Html(include_str!("../web/dist/index.html"))
+}
+
+/// HTTP Basic Auth middleware.
+/// When `auth_user` and `auth_pass` are set in config, every request must
+/// carry a valid `Authorization: Basic <base64>` header. If the credentials
+/// are not configured, all requests are allowed through.
+async fn basic_auth(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, [(header::HeaderName, &'static str); 1])> {
+    let (Some(user), Some(pass)) = (&state.config.auth_user, &state.config.auth_pass) else {
+        return Ok(next.run(request).await);
+    };
+
+    let unauthorized = Err((
+        StatusCode::UNAUTHORIZED,
+        [(header::WWW_AUTHENTICATE, "Basic realm=\"fuel-logger\"")],
+    ));
+
+    let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return unauthorized;
+    };
+
+    let Some(encoded) = auth_header.strip_prefix("Basic ") else {
+        return unauthorized;
+    };
+
+    let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+        return unauthorized;
+    };
+
+    let Ok(credentials) = String::from_utf8(decoded) else {
+        return unauthorized;
+    };
+
+    let expected = format!("{user}:{pass}");
+    if credentials == expected {
+        Ok(next.run(request).await)
+    } else {
+        unauthorized
+    }
 }
 
 pub fn router(shared: AppState) -> Router {
@@ -26,8 +73,10 @@ pub fn router(shared: AppState) -> Router {
         .route("/api/stations", get(get_stations))
         .route("/api/logs", get(list_logs))
         .route("/api/logs/{id}", get(get_log))
+        .route("/api/stats", get(get_stats))
         .route("/api/snapshots/{station_id}/{filename}", get(get_snapshot))
         .route("/", get(frontend))
+        .layer(middleware::from_fn_with_state(shared.clone(), basic_auth))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(shared)
@@ -171,7 +220,7 @@ async fn list_logs(
         sql.push_str(" WHERE ");
         sql.push_str(&conditions.join(" AND "));
     }
-    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+    sql.push_str(" ORDER BY id DESC LIMIT ? OFFSET ?");
 
     let mut query = sqlx::query_as::<_, Log>(&sql);
     if let Some(station) = params.station {
@@ -202,6 +251,54 @@ async fn get_log(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .map(Json)
     .ok_or((StatusCode::NOT_FOUND, "Log not found".to_string()))
+}
+
+// ─── Stats handler ──────────────────────────────────────────────────────────
+
+async fn get_stats(
+    State(state): State<AppState>,
+    Query(params): Query<StatsQuery>,
+) -> Result<Json<Vec<UserStats>>, (StatusCode, String)> {
+    let mut sql = String::from(
+        r#"SELECT
+            l.user_id,
+            u.name AS user_name,
+            COALESCE(SUM(l.consumption), 0.0) AS total_liters,
+            COALESCE(SUM(l.length), 0) AS total_seconds,
+            COUNT(*) AS refuel_count
+        FROM logs l
+        JOIN users u ON u.id = l.user_id
+        WHERE 1=1"#,
+    );
+
+    if params.from.is_some() {
+        sql.push_str(" AND l.created_at >= ?");
+    }
+    if params.to.is_some() {
+        sql.push_str(" AND l.created_at <= ?");
+    }
+    if params.station.is_some() {
+        sql.push_str(" AND l.station = ?");
+    }
+
+    sql.push_str(" GROUP BY l.user_id ORDER BY total_liters DESC");
+
+    let mut query = sqlx::query_as::<_, UserStats>(&sql);
+    if let Some(ref from) = params.from {
+        query = query.bind(from);
+    }
+    if let Some(ref to) = params.to {
+        query = query.bind(to);
+    }
+    if let Some(station) = params.station {
+        query = query.bind(station);
+    }
+
+    query
+        .fetch_all(&state.pool)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 // ─── Snapshot handler ───────────────────────────────────────────────────────

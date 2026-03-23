@@ -5,6 +5,10 @@
 listen_addr = "0.0.0.0:8000"
 database_url = "sqlite:fuelloggerrs.db?mode=rwc"
 
+# Optional HTTP Basic Auth (remove or comment out to disable)
+auth_user = "admin"
+auth_pass = "changeme"
+
 [[stations]]
 id = 1
 name = "S1"
