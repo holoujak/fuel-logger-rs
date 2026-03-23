@@ -48,7 +48,8 @@ struct StationRuntime {
     start_pin: InputPin,
     stop_pin: InputPin,
     pause_pin: Option<InputPin>,
-    _flow_meter_pin: Option<InputPin>,
+    flow_meter_pin: Option<InputPin>,
+    flow_meter_last_level: Level,
     pulse_counter: Arc<Mutex<u64>>,
     /// Accumulated keypad digits (cleared on timeout / enter).
     keypad_code: String,
@@ -118,7 +119,7 @@ impl StationManager {
             let pulse_counter = Arc::new(Mutex::new(0u64));
             let flow_meter_pin = sc
                 .flow_meter_gpio
-                .map(|p| gpio.setup_input_pullup_with_counter(p, pulse_counter.clone()))
+                .map(|p| gpio.setup_input_pullup(p))
                 .transpose()?;
 
             info!("Station {} ({}) initialized", sc.id, sc.name);
@@ -134,7 +135,8 @@ impl StationManager {
                     start_pin,
                     stop_pin,
                     pause_pin,
-                    _flow_meter_pin: flow_meter_pin,
+                    flow_meter_pin,
+                    flow_meter_last_level: Level::High,
                     pulse_counter,
                     keypad_code: String::new(),
                     keypad_last_key: Instant::now(),
@@ -231,7 +233,7 @@ impl StationManager {
             .take()
             .expect("run_hardware_loop called twice");
 
-        let poll_interval = Duration::from_millis(100);
+        let poll_interval = Duration::from_millis(1);
 
         loop {
             if *self.shutdown.lock().unwrap() {
@@ -379,6 +381,16 @@ impl StationManager {
                 // Keypad timeout
                 if !s.keypad_code.is_empty() && s.keypad_last_key.elapsed() > KEYPAD_TIMEOUT {
                     s.keypad_code.clear();
+                }
+
+                // Flow meter edge detection (polling-based)
+                if let Some(ref fm_pin) = s.flow_meter_pin {
+                    let current = fm_pin.read();
+                    if s.flow_meter_last_level == Level::High && current == Level::Low {
+                        let mut count = s.pulse_counter.lock().unwrap();
+                        *count += 1;
+                    }
+                    s.flow_meter_last_level = current;
                 }
 
                 let start_pressed = s.start_pin.read() == Level::Low;
@@ -539,6 +551,7 @@ impl StationManager {
         s.active_user_id = None;
         s.active_user_name = None;
         s.accumulated_length = 0;
+        *s.pulse_counter.lock().unwrap() = 0;
         s.buzzer_tick.store(0, Ordering::Relaxed);
     }
 
