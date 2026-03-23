@@ -25,6 +25,9 @@ pub struct Config {
     pub listen_addr: String,
     #[serde(default = "default_snapshot_dir")]
     pub snapshot_dir: String,
+    /// Optional HTTP Basic Auth username. Auth is disabled when not set.
+    pub auth_user: Option<String>,
+    pub auth_pass: Option<String>,
     pub stations: Vec<StationConfig>,
 }
 
@@ -90,11 +93,16 @@ impl Config {
         let snapshot_dir =
             std::env::var("RTSP_SNAPSHOT_DIR").unwrap_or_else(|_| default_snapshot_dir());
 
+        let auth_user = std::env::var("AUTH_USER").ok();
+        let auth_pass = std::env::var("AUTH_PASS").ok();
+
         Ok(Config {
             database_url,
             listen_addr,
             stations,
             snapshot_dir,
+            auth_user,
+            auth_pass,
         })
     }
 }
