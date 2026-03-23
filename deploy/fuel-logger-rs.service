@@ -1,0 +1,35 @@
+[Unit]
+Description=Fuel Logger RS
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=fuel-logger
+Group=fuel-logger
+WorkingDirectory=/opt/fuel-logger-rs
+ExecStart=/opt/fuel-logger-rs/fuel-logger-rs
+Restart=on-failure
+RestartSec=5
+
+# Logging – stdout/stderr go to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fuel-logger-rs
+
+# Environment
+Environment=RUST_LOG=fuel_logger=info,tower_http=info
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/fuel-logger-rs
+PrivateTmp=true
+
+# GPIO access on Raspberry Pi (comment out if not needed)
+SupplementaryGroups=gpio
+
+[Install]
+WantedBy=multi-user.target
