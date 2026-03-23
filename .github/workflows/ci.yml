@@ -90,8 +90,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mv target/release/fuel-logger-rs fuel-logger-rs-x86_64
           gh release upload "${{ github.event.release.tag_name }}" \
-            target/release/fuel-logger-rs#fuel-logger-rs-x86_64
+            fuel-logger-rs-x86_64
 
   build-aarch64:
     name: Build aarch64
@@ -128,5 +129,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mv target/aarch64-unknown-linux-musl/release/fuel-logger-rs fuel-logger-rs-aarch64
           gh release upload "${{ github.event.release.tag_name }}" \
-            target/aarch64-unknown-linux-musl/release/fuel-logger-rs#fuel-logger-rs-aarch64
+            fuel-logger-rs-aarch64
