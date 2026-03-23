@@ -115,7 +115,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --release --target aarch64-unknown-linux-musl
+        run: cargo build --release --target aarch64-unknown-linux-musl --features gpio
 
       - name: Upload artifact
         if: github.event_name == 'push' || github.event_name == 'release'
