@@ -37,3 +37,6 @@ toml = "1.0.7"
 [features]
 default = []
 gpio = ["rppal"]
+
+[profile.release]
+strip = true
