@@ -59,3 +59,21 @@ pub struct LogQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct StatsQuery {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub station: Option<i32>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct UserStats {
+    pub user_id: i32,
+    pub user_name: String,
+    pub total_liters: f64,
+    pub total_seconds: i64,
+    pub refuel_count: i64,
+}

@@ -249,3 +249,38 @@ button:hover {
     justify-content: flex-end;
     margin-top: 1.5rem;
 }
+
+/* Stats page */
+.stats-filters {
+    margin-bottom: 1.5rem;
+}
+
+.stats-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.stats-card {
+    background: var(--surface);
+    border: 1px solid var(--primary);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stats-card-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.stats-card-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}

@@ -81,3 +81,27 @@ export const fetchLogs = (params?: LogQuery) => {
     const q = qs.toString();
     return apiFetch<Log[]>(`/logs${q ? "?" + q : ""}`);
 };
+
+// Stats
+export interface StatsQuery {
+    from?: string;
+    to?: string;
+    station?: number;
+}
+
+export interface UserStats {
+    user_id: number;
+    user_name: string;
+    total_liters: number;
+    total_seconds: number;
+    refuel_count: number;
+}
+
+export const fetchStats = (params?: StatsQuery) => {
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set("from", params.from);
+    if (params?.to) qs.set("to", params.to);
+    if (params?.station != null) qs.set("station", String(params.station));
+    const q = qs.toString();
+    return apiFetch<UserStats[]>(`/stats${q ? "?" + q : ""}`);
+};

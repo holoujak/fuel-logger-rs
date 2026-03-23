@@ -26,6 +26,7 @@ pub fn router(shared: AppState) -> Router {
         .route("/api/stations", get(get_stations))
         .route("/api/logs", get(list_logs))
         .route("/api/logs/{id}", get(get_log))
+        .route("/api/stats", get(get_stats))
         .route("/api/snapshots/{station_id}/{filename}", get(get_snapshot))
         .route("/", get(frontend))
         .layer(CorsLayer::permissive())
@@ -202,6 +203,54 @@ async fn get_log(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .map(Json)
     .ok_or((StatusCode::NOT_FOUND, "Log not found".to_string()))
+}
+
+// ─── Stats handler ──────────────────────────────────────────────────────────
+
+async fn get_stats(
+    State(state): State<AppState>,
+    Query(params): Query<StatsQuery>,
+) -> Result<Json<Vec<UserStats>>, (StatusCode, String)> {
+    let mut sql = String::from(
+        r#"SELECT
+            l.user_id,
+            u.name AS user_name,
+            COALESCE(SUM(l.consumption), 0.0) AS total_liters,
+            COALESCE(SUM(l.length), 0) AS total_seconds,
+            COUNT(*) AS refuel_count
+        FROM logs l
+        JOIN users u ON u.id = l.user_id
+        WHERE 1=1"#,
+    );
+
+    if params.from.is_some() {
+        sql.push_str(" AND l.created_at >= ?");
+    }
+    if params.to.is_some() {
+        sql.push_str(" AND l.created_at <= ?");
+    }
+    if params.station.is_some() {
+        sql.push_str(" AND l.station = ?");
+    }
+
+    sql.push_str(" GROUP BY l.user_id ORDER BY total_liters DESC");
+
+    let mut query = sqlx::query_as::<_, UserStats>(&sql);
+    if let Some(ref from) = params.from {
+        query = query.bind(from);
+    }
+    if let Some(ref to) = params.to {
+        query = query.bind(to);
+    }
+    if let Some(station) = params.station {
+        query = query.bind(station);
+    }
+
+    query
+        .fetch_all(&state.pool)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 // ─── Snapshot handler ───────────────────────────────────────────────────────
