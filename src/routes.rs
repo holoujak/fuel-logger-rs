@@ -1,19 +1,66 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
+    extract::{Path, Query, Request, State},
+    http::{header, StatusCode},
+    middleware::{self, Next},
+    response::{Html, Json, Response},
     routing::get,
     Router,
 };
+use base64::Engine;
 
 use crate::models::*;
 use crate::state::AppState;
-use axum::response::Html;
 
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 async fn frontend() -> Html<&'static str> {
     Html(include_str!("../web/dist/index.html"))
+}
+
+/// HTTP Basic Auth middleware.
+/// When `auth_user` and `auth_pass` are set in config, every request must
+/// carry a valid `Authorization: Basic <base64>` header. If the credentials
+/// are not configured, all requests are allowed through.
+async fn basic_auth(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, [(header::HeaderName, &'static str); 1])> {
+    let (Some(user), Some(pass)) = (&state.config.auth_user, &state.config.auth_pass) else {
+        return Ok(next.run(request).await);
+    };
+
+    let unauthorized = Err((
+        StatusCode::UNAUTHORIZED,
+        [(header::WWW_AUTHENTICATE, "Basic realm=\"fuel-logger\"")],
+    ));
+
+    let Some(auth_header) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return unauthorized;
+    };
+
+    let Some(encoded) = auth_header.strip_prefix("Basic ") else {
+        return unauthorized;
+    };
+
+    let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+        return unauthorized;
+    };
+
+    let Ok(credentials) = String::from_utf8(decoded) else {
+        return unauthorized;
+    };
+
+    let expected = format!("{user}:{pass}");
+    if credentials == expected {
+        Ok(next.run(request).await)
+    } else {
+        unauthorized
+    }
 }
 
 pub fn router(shared: AppState) -> Router {
@@ -29,6 +76,7 @@ pub fn router(shared: AppState) -> Router {
         .route("/api/stats", get(get_stats))
         .route("/api/snapshots/{station_id}/{filename}", get(get_snapshot))
         .route("/", get(frontend))
+        .layer(middleware::from_fn_with_state(shared.clone(), basic_auth))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(shared)

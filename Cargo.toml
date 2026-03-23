@@ -34,6 +34,9 @@ anyhow = "1"
 thiserror = "1"
 toml = "1.0.7"
 
+# Auth
+base64 = "0.22"
+
 [features]
 default = []
 gpio = ["rppal"]
