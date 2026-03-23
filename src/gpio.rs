@@ -1,6 +1,12 @@
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, warn};
+use tracing::debug;
+
+#[cfg(feature = "gpio")]
+use tracing::info;
+
+#[cfg(not(feature = "gpio"))]
+use tracing::warn;
 
 // ═══════════════════════════════════════════════════════════════════
 // Real GPIO implementation (Raspberry Pi only)
@@ -9,7 +15,7 @@ use tracing::{debug, warn};
 #[cfg(feature = "gpio")]
 mod real {
     use super::*;
-    use rppal::gpio::{Gpio, InputPin, OutputPin, Trigger};
+    use rppal::gpio::{Gpio, Trigger};
 
     pub struct GpioController {
         gpio: Gpio,
