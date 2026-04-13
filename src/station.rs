@@ -14,6 +14,7 @@ use crate::config::{Config, StationConfig};
 use crate::gpio::{GpioController, InputPin, Level, OutputPin};
 use crate::models::StationInfo;
 use crate::snapshot;
+use crate::tuf2000::Tuf2000Client;
 use crate::wiegand::{WiegandEvent, WiegandReader};
 
 // ─── Station status (mirrors the Python enum) ───────────────────────────────
@@ -48,9 +49,7 @@ struct StationRuntime {
     start_pin: InputPin,
     stop_pin: InputPin,
     pause_pin: Option<InputPin>,
-    flow_meter_pin: Option<InputPin>,
-    flow_meter_last_level: Level,
-    pulse_counter: Arc<Mutex<u64>>,
+    flow_meter_start: f32,
     /// Accumulated keypad digits (cleared on timeout / enter).
     keypad_code: String,
     keypad_last_key: Instant,
@@ -76,7 +75,6 @@ struct StationRuntime {
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 const SAFE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-const FLOW_METER_PPL: f64 = 88.0;
 const KEYPAD_TIMEOUT: Duration = Duration::from_secs(5);
 
 // ─── Station Manager ────────────────────────────────────────────────────────
@@ -84,6 +82,7 @@ const KEYPAD_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct StationManager {
     stations: Mutex<HashMap<u32, StationRuntime>>,
     pool: SqlitePool,
+    tuf2000: Option<Tuf2000Client>,
     config: Config,
     gpio: GpioController,
     wiegand_tx: mpsc::UnboundedSender<WiegandEvent>,
@@ -98,7 +97,12 @@ impl std::fmt::Debug for StationManager {
 }
 
 impl StationManager {
-    pub fn new(config: Config, pool: SqlitePool, gpio: GpioController) -> Result<Self> {
+    pub fn new(
+        config: Config,
+        pool: SqlitePool,
+        gpio: GpioController,
+        tuf2000: Option<Tuf2000Client>,
+    ) -> Result<Self> {
         let (tx, rx) = mpsc::unbounded_channel::<WiegandEvent>();
         let mut stations_map = HashMap::new();
 
@@ -116,12 +120,6 @@ impl StationManager {
                 .map(|p| gpio.setup_input_pullup(p))
                 .transpose()?;
 
-            let pulse_counter = Arc::new(Mutex::new(0u64));
-            let flow_meter_pin = sc
-                .flow_meter_gpio
-                .map(|p| gpio.setup_input_pullup(p))
-                .transpose()?;
-
             info!("Station {} ({}) initialized", sc.id, sc.name);
 
             stations_map.insert(
@@ -135,9 +133,7 @@ impl StationManager {
                     start_pin,
                     stop_pin,
                     pause_pin,
-                    flow_meter_pin,
-                    flow_meter_last_level: Level::High,
-                    pulse_counter,
+                    flow_meter_start: 0.0,
                     keypad_code: String::new(),
                     keypad_last_key: Instant::now(),
                     relay_start: None,
@@ -160,6 +156,7 @@ impl StationManager {
             gpio,
             wiegand_tx: tx,
             wiegand_rx: Mutex::new(Some(rx)),
+            tuf2000,
             shutdown: Mutex::new(false),
         })
     }
@@ -184,7 +181,7 @@ impl StationManager {
                     name: s.cfg.name.clone(),
                     status: s.status.to_string(),
                     current_length_secs: current_length,
-                    pulses_count: *s.pulse_counter.lock().unwrap(),
+                    flow_meter_start: 0,
                     active_user: s.active_user_name.clone(),
                 }
             })
@@ -360,7 +357,6 @@ impl StationManager {
             s.active_user_id = Some(user_id);
             s.active_user_name = Some(user_name);
             s.accumulated_length = 0;
-            *s.pulse_counter.lock().unwrap() = 0;
         }
     }
 
@@ -369,11 +365,12 @@ impl StationManager {
     async fn poll_buttons(&self) {
         // Collect any log that needs saving while holding the lock,
         // then save it after releasing the lock (no MutexGuard across await).
-        let pending_log = {
+        let (pending_log, pending_flow_starts) = {
             let mut stations = self.stations.lock().unwrap();
 
             let station_ids: Vec<u32> = stations.keys().copied().collect();
-            let mut log_to_save: Option<LogSaveInfo> = None;
+            let mut log_to_save: Option<(LogSaveInfo, f32)> = None;
+            let mut flow_starts: Vec<(u32, u8)> = Vec::new();
 
             for sid in station_ids {
                 let s = stations.get_mut(&sid).unwrap();
@@ -381,16 +378,6 @@ impl StationManager {
                 // Keypad timeout
                 if !s.keypad_code.is_empty() && s.keypad_last_key.elapsed() > KEYPAD_TIMEOUT {
                     s.keypad_code.clear();
-                }
-
-                // Flow meter edge detection (polling-based)
-                if let Some(ref fm_pin) = s.flow_meter_pin {
-                    let current = fm_pin.read();
-                    if s.flow_meter_last_level == Level::High && current == Level::Low {
-                        let mut count = s.pulse_counter.lock().unwrap();
-                        *count += 1;
-                    }
-                    s.flow_meter_last_level = current;
                 }
 
                 let start_pressed = s.start_pin.read() == Level::Low;
@@ -402,7 +389,8 @@ impl StationManager {
                     .unwrap_or(false);
 
                 match s.status {
-                    StationStatus::Waiting => {
+                    StationStatus::Idle => {
+                        // TODO: change back to waiting
                         // Timeout check
                         if let Some(since) = s.waiting_since {
                             if since.elapsed() > WAIT_TIMEOUT {
@@ -414,6 +402,8 @@ impl StationManager {
 
                         if start_pressed {
                             info!("START pressed on station {sid} → relay ON");
+                            s.active_user_id = Some(42);
+                            s.active_user_name = Some("holoujak".to_string());
                             s.waiting_since = None;
                             s.relay_pin.set_low();
                             if let Some(ref mut buz) = s.buzzer_pin {
@@ -437,6 +427,10 @@ impl StationManager {
                             s.accumulated_length = 0;
                             s.relay_on_since = Some(Instant::now());
                             s.status = StationStatus::On;
+
+                            if let Some(slave_id) = s.cfg.flow_meter_slave_id {
+                                flow_starts.push((sid, slave_id));
+                            }
                         }
                     }
 
@@ -446,7 +440,8 @@ impl StationManager {
                             if since.elapsed() > SAFE_TIMEOUT {
                                 warn!("Safety timeout on station {sid}");
                                 Self::accumulate_length(s);
-                                log_to_save = Some(Self::extract_log_info(s));
+                                log_to_save =
+                                    Some((Self::extract_log_info(self, s), s.flow_meter_start));
                                 Self::reset_station(s);
                                 break; // release lock, save log
                             }
@@ -455,7 +450,8 @@ impl StationManager {
                         if stop_pressed {
                             info!("STOP pressed on station {sid} → relay OFF");
                             Self::accumulate_length(s);
-                            log_to_save = Some(Self::extract_log_info(s));
+                            log_to_save =
+                                Some((Self::extract_log_info(self, s), s.flow_meter_start));
                             Self::reset_station(s);
                             break;
                         }
@@ -482,7 +478,8 @@ impl StationManager {
 
                         if stop_pressed {
                             info!("STOP pressed on station {sid} during PAUSE → relay OFF");
-                            log_to_save = Some(Self::extract_log_info(s));
+                            log_to_save =
+                                Some((Self::extract_log_info(self, s), s.flow_meter_start));
                             Self::reset_station(s);
                             break;
                         }
@@ -504,12 +501,55 @@ impl StationManager {
                 }
             }
 
-            log_to_save
+            (log_to_save, flow_starts)
             // MutexGuard dropped here
         };
 
-        // Async DB save happens outside the lock
-        if let Some(log_info) = pending_log {
+        // Async flow meter reads happen outside the lock.
+        if let Some(tuf2000) = self.tuf2000.as_ref() {
+            for (sid, slave_id) in pending_flow_starts {
+                let total = match tuf2000.read_total_accumulator(slave_id).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(
+                            "Failed to read flow meter start value on station {} (slave {}): {}",
+                            sid, slave_id, e
+                        );
+                        0.0
+                    }
+                };
+                let mut stations = self.stations.lock().unwrap();
+                if let Some(s) = stations.get_mut(&sid) {
+                    s.flow_meter_start = total;
+                }
+            }
+        }
+
+        // Async DB save happens outside the lock.
+        if let Some((mut log_info, flow_meter_start)) = pending_log {
+            log_info.consumption = if let (Some(slave_id), Some(tuf2000)) = (
+                self.config
+                    .stations
+                    .iter()
+                    .find(|sc| sc.id as i32 == log_info.station)
+                    .and_then(|sc| sc.flow_meter_slave_id),
+                self.tuf2000.as_ref(),
+            ) {
+                let total = match tuf2000.read_total_accumulator(slave_id).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(
+                            "Failed to read flow meter stop value on station {} (slave {}): {}",
+                            log_info.station, slave_id, e
+                        );
+                        flow_meter_start
+                    }
+                };
+                (total - flow_meter_start).max(0.0)
+            } else {
+                0.0
+            };
+
             self.save_log(log_info, &self.pool).await;
         }
     }
@@ -524,16 +564,14 @@ impl StationManager {
         }
     }
 
-    fn extract_log_info(s: &mut StationRuntime) -> LogSaveInfo {
-        let pulses = *s.pulse_counter.lock().unwrap();
+    fn extract_log_info(&self, s: &mut StationRuntime) -> LogSaveInfo {
         LogSaveInfo {
             user_id: s.active_user_id.unwrap_or(0),
             station: s.cfg.id as i32,
             created_at: s.relay_start.map(|dt| dt.naive_local()),
             length: s.accumulated_length as i32,
+            consumption: 0.0,
             snapshot_handle: s.snapshot_handle.take(),
-            consumption: pulses as f64 / FLOW_METER_PPL,
-            pulses,
         }
     }
 
@@ -551,14 +589,14 @@ impl StationManager {
         s.active_user_id = None;
         s.active_user_name = None;
         s.accumulated_length = 0;
-        *s.pulse_counter.lock().unwrap() = 0;
+        s.flow_meter_start = 0.0;
         s.buzzer_tick.store(0, Ordering::Relaxed);
     }
 
     async fn save_log(&self, info: LogSaveInfo, pool: &SqlitePool) {
         info!(
-            "Saving log: station={} length={}s consumption={:.2}l ({} pulses)",
-            info.station, info.length, info.consumption, info.pulses
+            "Saving log: station={} length={}s consumption={:.2}l",
+            info.station, info.length, info.consumption
         );
 
         // Await the background snapshot capture if one was started
@@ -601,7 +639,6 @@ struct LogSaveInfo {
     station: i32,
     created_at: Option<chrono::NaiveDateTime>,
     length: i32,
-    consumption: f64,
-    pulses: u64,
+    consumption: f32,
     snapshot_handle: Option<tokio::task::JoinHandle<Option<String>>>,
 }

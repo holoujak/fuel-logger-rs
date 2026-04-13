@@ -1,14 +1,10 @@
-
 use std::sync::Arc;
 
 use tracing::info;
 
 use crate::modbus::{
-    Rs485Modbus,
-    build_read_holding_registers_frame,
-    decode_f32_be,
-    decode_u32_be,
-    parse_read_holding_registers_response,
+    build_read_holding_registers_frame, decode_f32_be, decode_u32_be,
+    parse_read_holding_registers_response, Rs485Modbus,
 };
 
 pub struct Tuf2000Client {
@@ -21,7 +17,10 @@ impl Tuf2000Client {
     }
 
     pub async fn read_total_accumulator(&self, slave_id: u8) -> anyhow::Result<f32> {
-        info!("MODBUS read_total_accumulator request: slave_id={}", slave_id);
+        info!(
+            "MODBUS read_total_accumulator request: slave_id={}",
+            slave_id
+        );
 
         // TUF2000 mapping:
         // 0025-0026: Net accumulator (LONG)
@@ -33,7 +32,10 @@ impl Tuf2000Client {
         let response = mb.query(&frame).await?;
         let flow = parse_read_holding_registers_response(&response)?;
         if flow.len() < 4 {
-            Err(anyhow::anyhow!("Expected at least 4 registers in MODBUS response, got {}", flow.len()))?;
+            Err(anyhow::anyhow!(
+                "Expected at least 4 registers in MODBUS response, got {}",
+                flow.len()
+            ))?;
         }
 
         let integer_part = decode_u32_be(&flow[0..2])? as f32;
@@ -53,6 +55,5 @@ impl Tuf2000Client {
         );
 
         Ok(total)
-
     }
 }

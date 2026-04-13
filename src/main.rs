@@ -6,15 +6,18 @@ use tracing::{info, warn};
 mod config;
 mod db;
 mod gpio;
+mod modbus;
 mod models;
 mod routes;
 mod snapshot;
 mod state;
 mod station;
+mod tuf2000;
 mod wiegand;
 
 use config::Config;
 use gpio::GpioController;
+use modbus::Rs485Modbus;
 use station::StationManager;
 
 #[tokio::main]
@@ -23,7 +26,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "fuel_logger=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "info,tower_http=info".into()),
         )
         .init();
 
@@ -37,8 +40,34 @@ async fn main() -> Result<()> {
     // GPIO controller
     let gpio = GpioController::new()?;
 
+    // RS485 / MODBUS ASCII must be initialized before StationManager takes GPIO ownership
+    let modbus = if let Some(ref mb_cfg) = config.modbus {
+        info!(
+            "MODBUS enabled: port={}, baud={}, re_gpio={:?}, de_gpio={:?}",
+            mb_cfg.port, mb_cfg.baud, mb_cfg.re_gpio, mb_cfg.de_gpio,
+        );
+        let mb = Rs485Modbus::new(
+            &gpio,
+            &mb_cfg.port,
+            mb_cfg.baud,
+            mb_cfg.re_gpio,
+            mb_cfg.de_gpio,
+        )?;
+        Some(Arc::new(tokio::sync::Mutex::new(mb)))
+    } else {
+        warn!("MODBUS is disabled (missing [modbus] section in config.toml)");
+        None
+    };
+
+    let tuf2000_client = modbus.clone().map(tuf2000::Tuf2000Client::new);
+
     // Station manager (owns all station state + GPIO logic)
-    let manager = Arc::new(StationManager::new(config.clone(), pool.clone(), gpio)?);
+    let manager = Arc::new(StationManager::new(
+        config.clone(),
+        pool.clone(),
+        gpio,
+        tuf2000_client,
+    )?);
 
     // Start hardware loops (Wiegand readers, button polling, flow meters)
     let manager_hw = manager.clone();

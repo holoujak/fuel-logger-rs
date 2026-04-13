@@ -33,6 +33,7 @@ dotenvy = "0.15"
 anyhow = "1"
 thiserror = "1"
 toml = "1.0.7"
+tokio-serial = "5.4.5"
 
 # Auth
 base64 = "0.22"

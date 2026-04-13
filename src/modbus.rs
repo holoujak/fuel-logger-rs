@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 use std::time::Duration;
-use tokio_serial::{SerialPortBuilderExt, SerialStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{info, debug};
+use tokio_serial::{SerialPortBuilderExt, SerialStream};
+use tracing::{debug, info};
 
 use crate::gpio::{GpioController, OutputPin};
 
@@ -14,7 +14,13 @@ pub struct Rs485Modbus {
 }
 
 impl Rs485Modbus {
-    pub fn new(gpio: &GpioController, port_path: &str, baud: u32, re_gpio: Option<u8>, de_gpio: Option<u8>) -> Result<Self> {
+    pub fn new(
+        gpio: &GpioController,
+        port_path: &str,
+        baud: u32,
+        re_gpio: Option<u8>,
+        de_gpio: Option<u8>,
+    ) -> Result<Self> {
         let port = tokio_serial::new(port_path, baud)
             .data_bits(tokio_serial::DataBits::Eight)
             .parity(tokio_serial::Parity::None)
@@ -23,28 +29,37 @@ impl Rs485Modbus {
             .open_native_async()?;
 
         let re_pin = if let Some(pin) = re_gpio {
-            let mut rp = gpio.setup_output_high(pin)?;  // HIGH = receiver disabled
+            let mut rp = gpio.setup_output_high(pin)?; // HIGH = receiver disabled
             rp.set_high();
-            rp.set_low();  // → idle: receive mode
+            rp.set_low(); // → idle: receive mode
             Some(rp)
         } else {
             None
         };
 
         let de_pin = if let Some(pin) = de_gpio {
-            let mut dp = gpio.setup_output_high(pin)?;  // LOW = driver disabled
+            let mut dp = gpio.setup_output_high(pin)?; // LOW = driver disabled
             dp.set_low();
             Some(dp)
         } else {
             None
         };
 
-        Ok(Self { port, baud, re_pin, de_pin })
+        Ok(Self {
+            port,
+            baud,
+            re_pin,
+            de_pin,
+        })
     }
 
     /// Sends a MODBUS ASCII request and returns the response as a String.
     pub async fn query(&mut self, frame: &[u8]) -> Result<String> {
-        debug!("MODBUS TX: {} bytes: {}", frame.len(), String::from_utf8_lossy(frame));
+        debug!(
+            "MODBUS TX: {} bytes: {}",
+            frame.len(),
+            String::from_utf8_lossy(frame)
+        );
 
         // TX mode (if GPIO pins are configured)
         if let Some(ref mut re) = self.re_pin {
@@ -86,7 +101,11 @@ impl Rs485Modbus {
                     Ok(n) => {
                         acc.extend_from_slice(&chunk[..n]);
                         last_byte_time = std::time::Instant::now();
-                        debug!("MODBUS RX: received {} bytes, buffer now {} bytes total", n, acc.len());
+                        debug!(
+                            "MODBUS RX: received {} bytes, buffer now {} bytes total",
+                            n,
+                            acc.len()
+                        );
 
                         // A MODBUS ASCII frame ends with CR, LF, or both.
                         // Stop reading if we see either or if we haven't received anything for 100ms.
@@ -101,8 +120,12 @@ impl Rs485Modbus {
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         // Timeout on read: check if we should give up or keep waiting.
-                        if last_byte_time.elapsed() > Duration::from_millis(200) && !acc.is_empty() {
-                            debug!("MODBUS RX: no data for 200ms, stopping with {} bytes", acc.len());
+                        if last_byte_time.elapsed() > Duration::from_millis(200) && !acc.is_empty()
+                        {
+                            debug!(
+                                "MODBUS RX: no data for 200ms, stopping with {} bytes",
+                                acc.len()
+                            );
                             break;
                         }
                         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -136,7 +159,11 @@ pub fn build_frame(addr: u8, func: u8, data: &[u8]) -> Vec<u8> {
 ///
 /// `register_number` is the 1-based register number from device documentation
 /// (e.g. 0001 means first register). It is converted to MODBUS zero-based address.
-pub fn build_read_holding_registers_frame(addr: u8, register_number: u16, count: u16) -> Result<Vec<u8>> {
+pub fn build_read_holding_registers_frame(
+    addr: u8,
+    register_number: u16,
+    count: u16,
+) -> Result<Vec<u8>> {
     if register_number == 0 {
         bail!("register_number must be >= 1");
     }
@@ -156,7 +183,10 @@ pub fn build_read_holding_registers_frame(addr: u8, register_number: u16, count:
 
 /// Parses MODBUS ASCII response for function 0x03 and returns register words.
 pub fn parse_read_holding_registers_response(s: &str) -> Result<Vec<u16>> {
-    debug!("Parsing MODBUS read_holding_registers response: {:?}", s.trim());
+    debug!(
+        "Parsing MODBUS read_holding_registers response: {:?}",
+        s.trim()
+    );
 
     let bytes = parse_ascii_frame(s)?;
     if bytes.len() < 5 {
@@ -173,7 +203,11 @@ pub fn parse_read_holding_registers_response(s: &str) -> Result<Vec<u16>> {
     }
 
     let byte_count = bytes[2] as usize;
-    debug!("MODBUS response: byte_count={} (declared), frame_len={}", byte_count, bytes.len());
+    debug!(
+        "MODBUS response: byte_count={} (declared), frame_len={}",
+        byte_count,
+        bytes.len()
+    );
 
     // Handle case where device reports incorrect byte_count but sends less data.
     // Calculate actual data available.
@@ -192,19 +226,26 @@ pub fn parse_read_holding_registers_response(s: &str) -> Result<Vec<u16>> {
     } else if byte_count != actual_data_bytes {
         bail!(
             "Byte count mismatch in MODBUS response: expected {}, got {}",
-            byte_count, actual_data_bytes
+            byte_count,
+            actual_data_bytes
         );
     }
 
     if (actual_data_bytes % 2) != 0 {
-        bail!("Register payload length must be even, got {} bytes", actual_data_bytes);
+        bail!(
+            "Register payload length must be even, got {} bytes",
+            actual_data_bytes
+        );
     }
 
     let mut out = Vec::with_capacity(actual_data_bytes / 2);
     for chunk in bytes[actual_data_start..].chunks_exact(2) {
         out.push(u16::from_be_bytes([chunk[0], chunk[1]]));
     }
-    debug!("Successfully parsed {} registers from MODBUS response", out.len());
+    debug!(
+        "Successfully parsed {} registers from MODBUS response",
+        out.len()
+    );
     Ok(out)
 }
 
@@ -248,15 +289,25 @@ fn parse_ascii_frame(s: &str) -> Result<Vec<u8>> {
         .unwrap_or(rest.len());
     let hex = &rest[..end];
 
-    if (hex.len() % 2) != 0 {
-        bail!("MODBUS ASCII payload must contain an even number of hex chars: '{}' (len={})", hex, hex.len());
+    if !hex.len().is_multiple_of(2) {
+        bail!(
+            "MODBUS ASCII payload must contain an even number of hex chars: '{}' (len={})",
+            hex,
+            hex.len()
+        );
     }
 
     let mut frame = Vec::with_capacity(hex.len() / 2);
     let mut i = 0;
     while i < hex.len() {
-        let byte = u8::from_str_radix(&hex[i..i + 2], 16)
-            .map_err(|e| anyhow::anyhow!("Invalid hex in MODBUS ASCII payload at offset {}: {} (chars: '{}')", i, e, &hex[i..i+2]))?;
+        let byte = u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| {
+            anyhow::anyhow!(
+                "Invalid hex in MODBUS ASCII payload at offset {}: {} (chars: '{}')",
+                i,
+                e,
+                &hex[i..i + 2]
+            )
+        })?;
         frame.push(byte);
         i += 2;
     }

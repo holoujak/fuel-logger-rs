@@ -36,7 +36,7 @@ pub struct StationInfo {
     pub name: String,
     pub status: String,
     pub current_length_secs: Option<i64>,
-    pub pulses_count: u64,
+    pub flow_meter_start: u32,
     pub active_user: Option<String>,
 }
 
@@ -49,7 +49,7 @@ pub struct Log {
     pub created_at: NaiveDateTime,
     pub station: i32,
     pub length: i32,
-    pub consumption: f64,
+    pub consumption: f32,
 }
 
 #[derive(Debug, Deserialize)]

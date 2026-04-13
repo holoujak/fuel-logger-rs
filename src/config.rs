@@ -14,8 +14,16 @@ pub struct StationConfig {
     pub stop_gpio: u8,
     pub pause_gpio: Option<u8>,
     pub buzzer_gpio: Option<u8>,
-    pub flow_meter_gpio: Option<u8>,
+    pub flow_meter_slave_id: Option<u8>,
     pub camera_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModbusConfig {
+    pub port: String,
+    pub baud: u32,
+    pub re_gpio: Option<u8>,
+    pub de_gpio: Option<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -29,6 +37,7 @@ pub struct Config {
     pub auth_user: Option<String>,
     pub auth_pass: Option<String>,
     pub stations: Vec<StationConfig>,
+    pub modbus: Option<ModbusConfig>,
 }
 
 fn default_listen_addr() -> String {
@@ -53,7 +62,7 @@ fn default_stations() -> Vec<StationConfig> {
             stop_gpio: 23,
             pause_gpio: Some(24),
             buzzer_gpio: Some(9),
-            flow_meter_gpio: None,
+            flow_meter_slave_id: None,
             camera_url: None,
         },
         StationConfig {
@@ -67,7 +76,7 @@ fn default_stations() -> Vec<StationConfig> {
             stop_gpio: 6,
             pause_gpio: Some(12),
             buzzer_gpio: Some(19),
-            flow_meter_gpio: Some(26),
+            flow_meter_slave_id: Some(1),
             camera_url: None,
         },
     ]
@@ -101,6 +110,7 @@ impl Config {
             listen_addr,
             stations,
             snapshot_dir,
+            modbus: None,
             auth_user,
             auth_pass,
         })

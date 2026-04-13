@@ -20,7 +20,7 @@ start_gpio = 22
 stop_gpio = 23
 pause_gpio = 24
 buzzer_gpio = 9
-# flow_meter_gpio = 16   # uncomment once additional flow meter is connected
+# flow_meter_slave_id = 2   # uncomment once additional flow meter is connected
 camera_url = "rtsp://user:password@192.168.1.203:554/Streaming/Channels/101"
 
 [[stations]]
@@ -34,5 +34,11 @@ start_gpio = 5
 stop_gpio = 6
 pause_gpio = 12
 buzzer_gpio = 19
-flow_meter_gpio = 26
+flow_meter_slave_id = 1
 camera_url = "rtsp://user:password@192.168.1.203:554/Streaming/Channels/101"
+
+[modbus]
+port = "/dev/ttyAMA0"
+baud = 9600
+re_gpio = 17
+de_gpio = 27

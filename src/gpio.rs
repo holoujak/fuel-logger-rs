@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::sync::{Arc, Mutex};
 use tracing::debug;
 
 #[cfg(feature = "gpio")]
@@ -38,20 +37,6 @@ mod real {
         pub fn setup_input_pullup(&self, pin: u8) -> Result<InputPin> {
             let input = self.gpio.get(pin)?.into_input_pullup();
             debug!("GPIO {pin} configured as INPUT PULLUP");
-            Ok(input)
-        }
-
-        pub fn setup_input_pullup_with_counter(
-            &self,
-            pin: u8,
-            counter: Arc<Mutex<u64>>,
-        ) -> Result<InputPin> {
-            let mut input = self.gpio.get(pin)?.into_input_pullup();
-            input.set_async_interrupt(Trigger::FallingEdge, move |_level| {
-                let mut count = counter.lock().unwrap();
-                *count += 1;
-            })?;
-            debug!("GPIO {pin} configured as INPUT PULLUP with falling-edge counter");
             Ok(input)
         }
 
@@ -127,15 +112,6 @@ mod mock {
 
         pub fn setup_input_pullup(&self, pin: u8) -> Result<InputPin> {
             debug!("[mock] GPIO {pin} configured as INPUT PULLUP");
-            Ok(InputPin { pin })
-        }
-
-        pub fn setup_input_pullup_with_counter(
-            &self,
-            pin: u8,
-            _counter: Arc<Mutex<u64>>,
-        ) -> Result<InputPin> {
-            debug!("[mock] GPIO {pin} configured as INPUT PULLUP (counter ignored)");
             Ok(InputPin { pin })
         }
 
